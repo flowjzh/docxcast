@@ -1,0 +1,45 @@
+[project]
+name = 'docxcast'
+description = 'DocxCast: Turn Word content controls into a typed schema, then cast your data back into documents'
+readme = 'README.md'
+requires-python = '>=3.9'
+license = 'MIT'
+authors = [
+    {name = 'Flow Jiang', email = 'flowjzh@gmail.com'},
+]
+keywords = ['docx', 'word', 'content-controls', 'template', 'schema', 'llm', 'structured-data']
+classifiers = [
+    'Development Status :: 4 - Beta',
+    'Intended Audience :: Developers',
+    'Topic :: Software Development :: Libraries :: Python Modules',
+    'Programming Language :: Python :: 3',
+    'Programming Language :: Python :: 3.9',
+    'Programming Language :: Python :: 3.10',
+    'Programming Language :: Python :: 3.11',
+    'Programming Language :: Python :: 3.12',
+    'Programming Language :: Python :: 3.13',
+    'Programming Language :: Python :: 3 :: Only',
+    'Operating System :: OS Independent',
+    'Typing :: Typed',
+]
+dependencies = [
+    'python-docx>=1.2.0',
+]
+dynamic = ["version"]
+
+[dependency-groups]
+dev = [
+    'pytest>=8.4.2',
+]
+
+[project.urls]
+Homepage = 'https://gitlab.com/flowjzh/docxcast'
+Repository = 'https://gitlab.com/flowjzh/docxcast.git'
+Issues = 'https://gitlab.com/flowjzh/docxcast/-/issues'
+
+[build-system]
+requires = ["hatchling", "uv-dynamic-versioning"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "uv-dynamic-versioning"

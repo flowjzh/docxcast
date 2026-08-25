@@ -1,0 +1,416 @@
+# DocxCast Template Syntax
+
+Every construct docxcast recognizes, in two views: the pseudo-structure a
+template author sees in Word, and the OOXML it is made of. Word writes more
+into `w:sdtPr` than docxcast reads (`w:rPr`, `w:id`, `w:placeholder`,
+`w:showingPlcHdr`, `w:appearance` — all ignored); what follows lists only the
+nodes that carry meaning.
+
+**Pseudo-structure notation**
+
+```
+▐ title ▌      one content control; the text inside is its Title
+plain text     literal document text (labels, separators, decoration)
+┌─ kind ─┐     a block-level control wrapping the enclosed lines
+```
+
+**Namespaces**: `w` = WordprocessingML, `w14`/`w15` = Microsoft Word 2010/2012
+extensions (checkbox, repeating section).
+
+---
+
+## Addressing: Title, Tag, Lock
+
+Shared by every control kind — set them in Word's *Control Properties*
+dialog:
+
+| Word property | XML | Role |
+|---|---|---|
+| **Title** | `<w:alias w:val="name"/>` | the field name — the only address |
+| **Tag** | `<w:tag w:val="the candidate's full name"/>` | free-text remark, handed to the LLM as the extraction requirement |
+| **Content control cannot be deleted** | `<w:lock w:val="sdtLocked"/>` | required field (`w:lockType` works too; `sdtContentLocked` alone does not) |
+
+A control without a Title is unaddressable (see [Unnamed controls](#unnamed-controls)).
+The Tag never names a field.
+
+---
+
+## Leaf controls
+
+### Text control → `string` field
+
+```
+In Word (Developer tab → Plain Text / Rich Text):
+
+    Name: ▐ name ▌
+```
+
+```xml
+<w:p>
+  <w:r><w:t>Name: </w:t></w:r>
+  <w:sdt>
+    <w:sdtPr>
+      <w:alias w:val="name"/>
+      <w:tag w:val="the candidate's full name"/>
+    </w:sdtPr>
+    <w:sdtContent>
+      <w:r><w:t>Click or tap here to enter text.</w:t></w:r>
+    </w:sdtContent>
+  </w:sdt>
+</w:p>
+```
+
+Derives `Field(name, remark)`. Renders the value into the first content run
+(formatting kept, extra runs dropped); no value → the template text stays.
+
+### Dropdown → `enum` field
+
+```
+    Status: ▐ employment_status ▾ ▁ Employed ▁ Unemployed ▁
+```
+
+```xml
+<w:sdt>
+  <w:sdtPr>
+    <w:alias w:val="employment_status"/>
+    <w:tag w:val="the candidate's current employment status"/>
+    <w:dropDownList>
+      <w:listItem w:displayText="Employed" w:value="employed"/>
+      <w:listItem w:displayText="Unemployed" w:value="unemployed"/>
+    </w:dropDownList>
+  </w:sdtPr>
+  <w:sdtContent>
+    <w:r><w:t>Choose an item.</w:t></w:r>
+  </w:sdtContent>
+</w:sdt>
+```
+
+Derives `Field(enum=[employed, unemployed], enum_labels=[Employed, Unemployed])`;
+the JSON Schema description carries the `Employed=employed` mapping so the
+LLM answers with the value. Renders the **display text** (`Employed`), not
+the value. List items without `w:displayText` are skipped — that is how Word
+stores the placeholder entry.
+
+### Date picker → `format` field
+
+```
+    First working year: ▐ start_work_date [yyyy] ▌
+```
+
+```xml
+<w:sdt>
+  <w:sdtPr>
+    <w:alias w:val="start_work_date"/>
+    <w:tag w:val="year the candidate started working"/>
+    <w:date>
+      <w:dateFormat w:val="yyyy"/>
+      <w:storeMappedDataAs w:val="date"/>
+    </w:date>
+  </w:sdtPr>
+  <w:sdtContent/>
+</w:sdt>
+```
+
+The picker's own display mask names the finest unit the value carries
+(quoted literals in the mask are decoration, not tokens):
+
+| `w:dateFormat` tokens | format | value shape |
+|---|---|---|
+| contains `d` | `date` | `2025-01-31` |
+| contains `M` | `date-month` | `2025-01` |
+| otherwise (e.g. `yyyy`) | `date-year` | `2025` |
+| — (bare picker) | `date` | full ISO date |
+| `w:storeMappedDataAs="dateTime"` | `date-time` | `2026-08-13 10:30:00` |
+
+Values are validated against these shapes and written verbatim on render —
+the template's display mask is not re-applied.
+
+### Checkbox → `boolean` field
+
+```
+    Married with children: ▐ is_married_with_children ☐ ▌
+```
+
+```xml
+<w:sdt>
+  <w:sdtPr>
+    <w:alias w:val="is_married_with_children"/>
+    <w:tag w:val="whether the candidate is married with children"/>
+    <w14:checkbox>
+      <w14:checked w14:val="0"/>
+      <w14:checkedState w14:val="2612"/>
+      <w14:uncheckedState w14:val="2610"/>
+    </w14:checkbox>
+  </w:sdtPr>
+  <w:sdtContent>
+    <w:r><w:t>☐</w:t></w:r>
+  </w:sdtContent>
+</w:sdt>
+```
+
+Derives `Field(type=boolean)`. Renders `w14:checked` 1/0 and the glyph from
+`checkedState`/`uncheckedState` (hex char codes — `2612` ☒ / `2610` ☐ here;
+fallback glyphs when the states are absent).
+
+### Picture control
+
+```xml
+<w:sdtPr>
+  <w:alias w:val="photo"/>
+  <w:picture/>
+</w:sdtPr>
+```
+
+Derives a plain `string` field (a path/URL contract for the caller) and is
+**always removed** on render — no image insertion yet.
+
+---
+
+## Repeating section → array
+
+```
+┌─ repeating: work_experiences ────────────────────────────┐
+│ ┌─ item ───────────────────────────────────────────────┐ │
+│ │ ▐ start_date ▌ — ▐ end_date ▌  ▐ company ▌ ▐ title ▌ │ │
+│ └──────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────┘
+```
+
+```xml
+<w:sdt>
+  <w:sdtPr>
+    <w:alias w:val="work_experiences"/>
+    <w:tag w:val="jobs held, one item per job"/>
+    <w15:repeatingSection/>
+  </w:sdtPr>
+  <w:sdtContent>
+    <w:sdt>
+      <w:sdtPr>
+        <w15:repeatingSectionItem/>
+      </w:sdtPr>
+      <w:sdtContent>
+        <!-- one item's paragraphs: the controls above -->
+      </w:sdtContent>
+    </w:sdt>
+  </w:sdtContent>
+</w:sdt>
+```
+
+Derives `Repeat(fields=…)` → `{"type": "array", "items": {…}}`. The item
+`w15:repeatingSectionItem` is the clone prototype: each array entry renders a
+deep copy with its own data; any template content in the repeat outside the
+item is discarded. `null`/`[]` → zero items, the whole control disappears.
+A repeat without a Title is unaddressable — skipped and omitted.
+
+---
+
+## Building block gallery → nested section
+
+```
+┌─ section: basic_info ────────────────────────────────────┐
+│ ▐ name ▌   ▐ employment_status ▾ ▌  ▐ start_work_date ▌  │
+└──────────────────────────────────────────────────────────┘
+```
+
+```xml
+<w:sdt>
+  <w:sdtPr>
+    <w:alias w:val="basic_info"/>
+    <w:tag w:val="the candidate's basic information"/>
+    <w:docPartList/>
+  </w:sdtPr>
+  <w:sdtContent>
+    <!-- paragraphs and controls, parsed as children -->
+  </w:sdtContent>
+</w:sdt>
+```
+
+Derives `Section(children=…)` → a nested object: data arrives as
+`{"basic_info": {"name": …, …}}`. `null` → the whole section is removed.
+Insert via Developer tab → **Building Block Gallery** (Word writes
+`w:docPartList`); the chosen gallery itself is irrelevant.
+
+---
+
+## Group control → union field
+
+One field with two renderings: the value, **or** one of the group's literal
+texts. The workhorse example — an end date that may also be "Present":
+
+```
+              ╭──────────────────────╮
+    2024-02 — │ ▐ end_date ▌ Present │        ← one inline group
+              ╰──────────────────────╯
+```
+
+```xml
+<w:r><w:t>2024-02 — </w:t></w:r>
+<w:sdt>
+  <w:sdtPr>
+    <w:group/>
+  </w:sdtPr>
+  <w:sdtContent>
+    <w:sdt>
+      <w:sdtPr>
+        <w:alias w:val="end_date"/>
+        <w:tag w:val="when the job ended"/>
+        <w:date><w:dateFormat w:val="yyyy-MM"/><w:storeMappedDataAs w:val="date"/></w:date>
+      </w:sdtPr>
+      <w:sdtContent/>
+    </w:sdt>
+    <w:r><w:t>Present</w:t></w:r>
+  </w:sdtContent>
+</w:sdt>
+```
+
+Rules (enforced by `DeriveError`):
+
+- exactly **one** control member; the rest is literal text
+- addressed **once** — the group's own Title, or the member's; never both
+- literal text outside the control becomes the field's `alternatives`
+  (`end_date` derives `anyOf[date-month, enum["Present"]]` and either branch
+  validates)
+- the member's kind gives type/format; `sdtLocked` on group or member marks
+  required
+- a union group is **inline** — its content lives inside one paragraph
+
+Render picks one branch: a value that equals an alternative keeps the
+literal and drops the control; any other value fills the control and deletes
+the literal runs. `keep_controls=True` keeps both sides editable instead.
+
+---
+
+## Group control → conditional block
+
+The same `w:group` with a **trailing `?`** on the address (TS-style
+`nationality?`) turns it into a display gate: falsy value removes the whole
+group — label and all — truthy fills transparently with the literal text
+kept as decoration.
+
+### A labeled line
+
+```
+┌─ group (anonymous) ─────────────┐
+│ Nationality: ▐ nationality? ▌   │
+└─────────────────────────────────┘
+```
+
+```xml
+<w:sdt>
+  <w:sdtPr>
+    <w:group/>
+  </w:sdtPr>
+  <w:sdtContent>
+    <w:p>
+      <w:r><w:t>Nationality: </w:t></w:r>
+      <w:sdt>
+        <w:sdtPr>
+          <w:alias w:val="nationality?"/>
+          <w:tag w:val="the candidate's nationality"/>
+        </w:sdtPr>
+        <w:sdtContent/>
+      </w:sdt>
+    </w:p>
+  </w:sdtContent>
+</w:sdt>
+```
+
+### A heading plus its repeat
+
+```
+┌─ group (anonymous) ──────────────────────────────────────┐
+│ Work Experiences                                         │
+│ ┌─ repeating: work_experiences? ───────────────────────┐ │
+│ │ ┌─ item ───────────────────────────────────────────┐ │ │
+│ │ │ ▐ company ▌  ▐ title ▌                           │ │ │
+│ │ └──────────────────────────────────────────────────┘ │ │
+│ └──────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────┘
+```
+
+The same XML shapes as above — the repeat simply carries
+`<w:alias w:val="work_experiences?"/>` and lives inside the group's
+`w:sdtContent` next to the heading paragraph.
+
+Semantics:
+
+- **falsy** = `None`, `""`, `False`, `0`, `[]`, `{}` (Python truthiness) —
+  the whole group disappears from the output
+- **truthy** — the guarded member fills by its own kind (control, repeat, or
+  section); literal text stays as decoration, never becomes `alternatives`
+- the marker may sit on the group's own Title instead, with no control
+  inside — that guards **static text** on a field
+  (`┌─ group: nationality? ─ "Foreign candidate" ┐`)
+- **inline** group → only the wrapped span drops, the paragraph survives;
+  **block-level** group → whole paragraphs drop. Wrap the paragraph mark to
+  make a line vanish completely.
+- the `?` is a render directive only — the derived schema (and the LLM)
+  see the plain `nationality` / `work_experiences` field
+
+### Positional guards — separators between repeat items
+
+Inside a repeating item, a group addressed `has_next?` (or `has_prev?`)
+shows only **between** items — separators and divider lines that appear once
+per gap, never before the first or after the last item:
+
+```
+┌─ repeating: skills ──────────────────────────────────────┐
+│ ┌─ item ───────────────────────────────────────────────┐ │
+│ │ ▐ skill ▌                                            │ │
+│ │ ┌─ group: has_next? ───────────────────────────────┐ │ │
+│ │ │ ,                                                │ │ │
+│ │ └──────────────────────────────────────────────────┘ │ │
+│ └──────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────┘
+
+1 item  →  Python
+3 items →  Python, Go, Rust        (separator only between)
+```
+
+```xml
+<!-- inside the repeatingSectionItem's sdtContent -->
+<w:sdt>
+  <w:sdtPr>
+    <w:group/>
+    <w:alias w:val="has_next?"/>
+  </w:sdtPr>
+  <w:sdtContent>
+    <w:p><w:r><w:t>,</w:t></w:r></w:p>
+  </w:sdtContent>
+</w:sdt>
+```
+
+`has_prev`/`has_next` are reserved names — a data field may not take them.
+The guards exist only in repeat-item scope; they are not schema nodes.
+
+---
+
+## Unnamed controls
+
+| Shape | Schema | Render |
+|---|---|---|
+| unnamed text control | skipped | unwrapped, template text kept |
+| unnamed section / repeat | skipped | omitted |
+| unnamed group with no addressed member | skipped | unwrapped in place |
+
+## What fails `derive_schema`
+
+| Template shape | Error |
+|---|---|
+| `name?` on a control/repeat/section not inside a group | a trailing `?` marks a conditional block — wrap it |
+| block-level group whose address has no `?` | block-level groups are conditional — marker missing |
+| any field/group named `has_prev` / `has_next` | reserved for positional guards |
+| `has_prev?` / `has_next?` outside a repeating item (incl. under a section — section fill uses its own dict) | positional guards only exist inside repeat items |
+| two addressed members in one group | a group is one field, address it once |
+| two control members in one group | one control, the rest literal text |
+
+## Render invariants
+
+- Controls are **unwrapped** by default (`keep_controls=True` keeps the
+  structure for round-trip editing; conditional drops keep the group too).
+- Any drop path tops an emptied table cell back up with one empty `w:p` —
+  a `w:tc` must retain a paragraph.
+- Missing leaf values keep their template text (lenient); `strict=True`
+  raises `RenderError` on the first error-level issue instead.
+- No whitespace control: text outside a dropped inline span (an orphaned
+  separator) survives — put the separator inside the span.
