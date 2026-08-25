@@ -1,4 +1,4 @@
-"""DocxCast: Turn Word content controls into a typed schema, then cast data back into documents."""
+"""DocXCast: Turn Word content controls into a typed schema, then cast data back into documents."""
 
 from importlib.metadata import PackageNotFoundError, version
 

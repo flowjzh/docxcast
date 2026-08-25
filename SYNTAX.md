@@ -1,4 +1,4 @@
-# DocxCast Template Syntax
+# DocXCast Template Syntax
 
 Every construct docxcast recognizes, in two views: the pseudo-structure a
 template author sees in Word, and the OOXML it is made of. Word writes more

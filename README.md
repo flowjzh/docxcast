@@ -1,16 +1,18 @@
-# DocxCast
+# DocXCast
+
+<img width="600" alt="DocXCast" src="https://github.com/user-attachments/assets/dc3287be-341a-4d88-a18d-71acc48c0169" />
 
 > **"Your template is the mold. Data is poured in, documents take shape."**
 
 ### 🪄 About
 
-**DocxCast** turns a Word document's **content controls** into a typed schema, and casts your data back into a formatted document.
+**DocXCast** turns a Word document's **content controls** into a typed schema, and casts your data back into a formatted document.
 
 **The Idea:**
 
 A `.docx` template is a natural schema editor. In Word's Developer tab, anyone can insert content controls and describe them:
 
-| Word control property | Role in DocxCast |
+| Word control property | Role in DocXCast |
 |---|---|
 | **Title** | field name (e.g. `name`) |
 | **Tag** | extraction requirement for the LLM (e.g. `the candidate's full name`) |
