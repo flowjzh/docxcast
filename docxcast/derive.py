@@ -14,6 +14,7 @@ from docxcast._ooxml import (
     KIND_REPEAT,
     KIND_SECTION,
     RESERVED,
+    SELF,
     date_mask_runs,
     dropdown_items,
     group_address,
@@ -84,6 +85,9 @@ def _parse_sdt(sdt, out: list, repeat: bool = False) -> None:
         if name in RESERVED:
             raise DeriveError(f'{name!r} is reserved for the positional guards '
                               f'({"/".join(sorted(RESERVED))}) inside repeats')
+        if name == SELF and (kind in (KIND_REPEAT, KIND_SECTION, KIND_GROUP) or not repeat):
+            raise DeriveError(f'{SELF!r} addresses a repeating item\'s own value — '
+                              'it belongs on the control inside a repeating item')
     content = sdt.find(qn('w:sdtContent'))
     if kind == KIND_REPEAT:
         out.append(_parse_repeat(content, name, remark, _is_locked(pr)))
@@ -102,6 +106,13 @@ def _parse_repeat(content, name, remark, required) -> Repeat:
     fields = []
     if (item := repeating_item(content)) is not None:
         _parse_children(item.find(qn('w:sdtContent')), fields, repeat=True)
+    if selfs := [f for f in fields if f.name == SELF]:
+        if len(fields) > 1:
+            raise DeriveError(
+                f'{name!r}: {SELF!r} addresses the item itself — no other '
+                'addressed control may share the item')
+        selfs[0].required = True  # every entry is a value; there is no way to omit it
+        return Repeat(name=name, remark=remark, item=selfs[0], required=required)
     return Repeat(name=name, remark=remark, fields=fields, required=required)
 
 

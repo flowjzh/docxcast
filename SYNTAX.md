@@ -202,6 +202,42 @@ deep copy with its own data; any template content in the repeat outside the
 item is discarded. `null`/`[]` → zero items, the whole control disappears.
 A repeat without a Title is unaddressable — skipped and omitted.
 
+### Scalar repeat → string array
+
+An item whose **sole addressed control** is titled `$` fills from the entry
+itself — the array holds that control's values, not one-key objects:
+
+```
+┌─ repeating: responsibilities ────────────────────────────┐
+│ ┌─ item ───────────────────────────────────────────────┐ │
+│ │ • ▐ $ ▌                                              │ │
+│ └──────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────┘
+```
+
+```xml
+<!-- inside the repeatingSection's w:sdtContent → repeatingSectionItem → w:p -->
+<w:sdt>
+  <w:sdtPr>
+    <w:alias w:val="$"/>
+    <w:tag w:val="a single responsibility item"/>
+  </w:sdtPr>
+  <w:sdtContent>
+    <w:r><w:t>Details…</w:t></w:r>
+  </w:sdtContent>
+</w:sdt>
+```
+
+Derives `Repeat(item=Field)` →
+`{"type": "array", "items": {"type": "string", "description": "a single responsibility item"}}`
+— the leaf's Tag becomes the per-item requirement. Data is
+`"responsibilities": ["统筹西欧区…", "管理总部平台…"]` and each entry renders
+into its own clone (one bullet per line in the layout above). The leaf's kind
+carries: a date picker titled `$` derives an array of formatted dates.
+Positional guards (`has_next?`) may share the item — separators between
+entries still work. `$` is a reserved address like the guard names; see the
+failure table below for where it is rejected.
+
 ---
 
 ## Building block gallery → nested section
@@ -401,6 +437,8 @@ The guards exist only in repeat-item scope; they are not schema nodes.
 | block-level group whose address has no `?` | block-level groups are conditional — marker missing |
 | any field/group named `has_prev` / `has_next` | reserved for positional guards |
 | `has_prev?` / `has_next?` outside a repeating item (incl. under a section — section fill uses its own dict) | positional guards only exist inside repeat items |
+| any control/group/repeat titled `$` outside a repeating item | `$` addresses a repeating item's own value — it belongs inside one |
+| `$` sharing a repeating item with another addressed control | `$` addresses the item itself — no other address may share it |
 | two addressed members in one group | a group is one field, address it once |
 | two control members in one group | one control, the rest literal text |
 

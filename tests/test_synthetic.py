@@ -449,6 +449,70 @@ def test_missing_repeat_renders_zero_items():
     assert 'x' not in full_text(reopen(result))
 
 
+def test_scalar_repeat_derives_a_string_array():
+    item = make_sdt(pr_extra=repeating_item_pr(),
+                    content=para(make_sdt('$', 'a single responsibility item', content=run('x'))))
+    template = build_doc(make_sdt('responsibilities', 'resp', pr_extra=repeating_pr(), content=item))
+    rep = derive_schema(BytesIO(template)).children[0]
+    assert rep.item == Field(name='$', remark='a single responsibility item', required=True)
+    node = rep.to_json_schema()
+    assert node['type'] == 'array'
+    assert node['items'] == {'type': 'string', 'description': 'a single responsibility item'}
+
+
+def test_scalar_repeat_renders_one_entry_per_item():
+    item = make_sdt(pr_extra=repeating_item_pr(),
+                    content=para(make_sdt('$', None, content=run('Details'))))
+    template = build_doc(make_sdt('skills', None, pr_extra=repeating_pr(), content=item))
+    out = reopen(render(BytesIO(template), {'skills': ['Python', 'Go', 'Rust']}))
+    assert paragraph_texts(out) == ['Python', 'Go', 'Rust']
+
+
+def test_scalar_repeat_validates_string_entries_only():
+    item = make_sdt(pr_extra=repeating_item_pr(),
+                    content=para(make_sdt('$', None, content=run('x'))))
+    template = build_doc(make_sdt('skills', None, pr_extra=repeating_pr(), content=item))
+    schema = derive_schema(BytesIO(template))
+    assert schema.validate({'skills': ['a', '']}).ok
+    assert schema.validate({'skills': [{'$': 'a'}]}).errors[0].code == 'type_mismatch'
+
+
+def test_scalar_repeat_keeps_positional_guards():
+    sep = make_sdt('has_next?', None, pr_extra=group_pr(), content=para(run(',')))
+    line = para(make_sdt('$', None, content=run('x')))
+    item = make_sdt(pr_extra=repeating_item_pr(), content=[line, sep])
+    template = build_doc(make_sdt('skills', None, pr_extra=repeating_pr(), content=item))
+    schema = derive_schema(BytesIO(template))
+    assert schema.children[0].item is not None  # the guard is no second address
+    out = reopen(render(BytesIO(template), {'skills': ['Python', 'Go', 'Rust']}))
+    assert full_text(out) == 'Python,Go,Rust'
+
+
+def test_self_address_outside_a_repeating_item_fails_derive():
+    template = build_doc(make_sdt('$', 'value', content=run('x')))
+    with pytest.raises(DeriveError, match='repeating item'):
+        derive_schema(BytesIO(template))
+
+
+def test_self_address_beside_other_fields_fails_derive():
+    item = make_sdt(pr_extra=repeating_item_pr(), content=para(
+        make_sdt('$', None, content=run('x')), run(' '), make_sdt('note', None, content=run('y'))))
+    template = build_doc(make_sdt('r', None, pr_extra=repeating_pr(), content=item))
+    with pytest.raises(DeriveError, match='no other addressed control'):
+        derive_schema(BytesIO(template))
+
+
+def test_scalar_repeat_nested_in_an_object_repeat_fills_both_levels():
+    bullets = make_sdt('lines', None, pr_extra=repeating_pr(), content=make_sdt(
+        pr_extra=repeating_item_pr(), content=para(make_sdt('$', None, content=run('·')))))
+    item = make_sdt(pr_extra=repeating_item_pr(),
+                    content=[para(make_sdt('name', None, content=run(''))), bullets])
+    template = build_doc(make_sdt('people', None, pr_extra=repeating_pr(), content=item))
+    data = {'people': [{'name': 'A', 'lines': ['x', 'y']}, {'name': 'B'}]}
+    assert paragraph_texts(reopen(render(BytesIO(template), data))) \
+        == ['A', 'x', 'y', 'B']
+
+
 def test_schema_to_dict_roundtrip():
     template = build_doc(make_sdt('a', 'field a', content=run('1')))
     d = derive_schema(BytesIO(template)).to_dict()

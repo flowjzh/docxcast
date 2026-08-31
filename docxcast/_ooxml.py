@@ -109,6 +109,10 @@ def date_mask_runs(mask: str) -> list:
 # field may not take them
 RESERVED = frozenset(('has_prev', 'has_next'))
 
+# the self address: a repeating item's sole addressed control named '$'
+# fills from the entry itself, making the repeat an array of that value
+SELF = '$'
+
 
 def split_conditional(alias: Optional[str]) -> tuple[Optional[str], bool]:
     """A trailing '?' on an address (TS-style ``name?``) marks its block

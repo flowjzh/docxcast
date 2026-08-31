@@ -21,8 +21,10 @@ from docxcast._ooxml import (
     KIND_GROUP,
     KIND_ITEM,
     KIND_PICTURE,
+    group_members,
     KIND_REPEAT,
     KIND_SECTION,
+    SELF,
     XML_SPACE,
     dropdown_items,
     date_mask_runs,
@@ -101,11 +103,14 @@ def _handle_sdt(sdt, data: dict, keep_controls: bool) -> None:
         item = repeating_item(content)
         if item is None:
             return
+        item_content = item.find(qn('w:sdtContent'))
+        scalar = _has_self(item_content)
         blocks = []
         for i, entry in enumerate(value):
             clone = deepcopy(item)
             clone_content = clone.find(qn('w:sdtContent'))
-            _fill_children(clone_content, _scoped(entry, i, len(value)), keep_controls)
+            scope = ({SELF: entry} if scalar else _as_dict(entry)) | scope_guards(i, len(value))
+            _fill_children(clone_content, scope, keep_controls)
             if keep_controls:
                 blocks.append(clone)
             else:
@@ -301,6 +306,9 @@ def _as_dict(value) -> dict:
     return value if isinstance(value, dict) else {}
 
 
-def _scoped(entry, i: int, n: int) -> dict:
-    """Item-local guard scope: positional booleans for conditional blocks."""
-    return {**_as_dict(entry), **scope_guards(i, n)}
+def _has_self(item_content) -> bool:
+    """The item carries the '$' self address at its OWN level: each
+    entry fills that control directly. A nested repeat's own '$' leaves
+    belong to it, so the walk never enters a control's content —
+    group_members' descent rule, shared with derive."""
+    return any(alias == SELF for _, _, alias, _ in group_members(item_content))

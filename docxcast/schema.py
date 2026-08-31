@@ -121,9 +121,12 @@ class Repeat:
     remark: Optional[str] = None
     fields: list = field(default_factory=list)
     required: bool = False
+    item: Optional[Field] = None  # a '$'-addressed item: the array holds its values
 
     def to_json_schema(self) -> dict:
-        node = {'type': 'array', 'items': _object_schema(self.fields)}
+        items = (self.item.to_json_schema() if self.item is not None
+                 else _object_schema(self.fields))
+        node = {'type': 'array', 'items': items}
         if self.remark is not None:
             node['description'] = self.remark
         return node
@@ -184,7 +187,7 @@ def _nullable(schema: dict) -> dict:
     """An optional object may also be null — the shape the model reads:
     an omitted structure field is absent, not filled with an empty
     object. Arrays keep a single type: empty already reads falsy to
-    the renderer, and the dashscope schema validator rejects type
+    the renderer, and provider-side schema validators may reject type
     unions on arrays."""
     if schema.get('type') == 'object':
         schema['type'] = ['object', 'null']
@@ -232,7 +235,10 @@ def _validate_node(node: Node, value: object, path: str, issues: list) -> None:
             issues.append(_issue(path, TYPE_MISMATCH, expected='array', got=value))
             return
         for i, item in enumerate(value):
-            _validate_object(node.fields, item, f'{path}[{i}]', issues)
+            if node.item is not None:
+                _validate_field(node.item, item, f'{path}[{i}]', issues)
+            else:
+                _validate_object(node.fields, item, f'{path}[{i}]', issues)
     else:
         _validate_field(node, value, path, issues)
 
