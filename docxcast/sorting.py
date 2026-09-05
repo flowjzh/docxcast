@@ -7,45 +7,62 @@ from __future__ import annotations
 
 import re
 
-from docxcast.schema import Repeat, Section
+from docxcast.schema import Repeat, Section, _path
 
 _GROUPS = re.compile(r'\d+')
 _SEGMENT_SPLIT = re.compile(r'(\d+)')
 
 
-def apply_sorts(schema, data: dict) -> None:
+def apply_sorts(schema, data: dict) -> dict:
     """Sort the rule-carrying arrays of ``data`` in place — repeats at
-    any nesting depth, sections included. Sorts never enter the JSON
-    schema: the model is not asked to order anything."""
-    _sort_children(schema.children, data)
+    any nesting depth, sections included. Returns the per-path
+    permutations the sort applied: ``perm[i]`` is the original index
+    of the item now at position ``i`` (dotted paths through sections;
+    repeats nested inside another repeat's items sort per parent
+    instance and hold no records of their own — excluded). Hosts
+    re-align per-item records written in extraction order (budget
+    arrangements) by it. Sorts never enter the JSON schema: the model
+    is not asked to order anything."""
+    perms = {}
+    _sort_children(schema.children, data, '', perms)
+    return perms
 
 
-def _sort_children(nodes: list, data) -> None:
+def _sort_children(nodes: list, data, prefix: str, perms: dict) -> None:
     for node in nodes:
+        path = _path(prefix, node.name)
         if isinstance(node, Repeat):
             items = data.get(node.name) if isinstance(data, dict) else None
             if node.sort is not None and isinstance(items, list):
-                items = _sorted(items, node.sort)
-                data[node.name] = items
+                order = _order(items, node.sort)
+                data[node.name] = [items[i] for i in order]
+                # a derive that emits one repeat twice (a template
+                # duplicate) walks the now-sorted array again — the
+                # first observation is the pre-sort permutation
+                perms.setdefault(path, order)
             for item in items or []:
                 if isinstance(item, dict):
-                    _sort_children(node.fields, item)
+                    # nested repeats sort per parent instance and hold
+                    # no budget records of their own — discarded
+                    _sort_children(node.fields, item, '', {})
         elif isinstance(node, Section):
             scoped = data.get(node.name) if isinstance(data, dict) else None
             if isinstance(scoped, dict):
-                _sort_children(node.children, scoped)
+                _sort_children(node.children, scoped, path, perms)
 
 
-def _sorted(items: list, spec) -> list:
-    """Each item's value is parsed once; unparsable items partition to
-    the tail in their original order, both directions."""
+def _order(items: list, spec) -> list:
+    """The sorted permutation — ``order[i]`` is the original index of
+    the item now at position i. Each item's value is parsed once;
+    unparsable items partition to the tail in their original order,
+    both directions."""
     parts = tuple(spec.key.split('.'))
     good, tail = [], []
-    for item in items:
+    for i, item in enumerate(items):
         parsed = _parse(spec.kind, _value(item, parts))
-        (tail if parsed is None else good).append((item, parsed))
+        (tail if parsed is None else good).append((i, parsed))
     good.sort(key=lambda pair: pair[1], reverse=spec.desc)
-    return [item for item, _ in good] + [item for item, _ in tail]
+    return [i for i, _ in good] + [i for i, _ in tail]
 
 
 def _value(item, parts: tuple):

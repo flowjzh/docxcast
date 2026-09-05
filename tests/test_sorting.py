@@ -96,6 +96,29 @@ def test_date_sort_desc_newest_first():
         ['2023.5', '2022-05', '2019.4']
 
 
+def test_apply_sorts_reports_position_to_original_index():
+    data = {'work_experiences': [job('2019.4', 'A'), job('2023.5', 'B'),
+                                 job('2022-05', 'C')]}
+    perms = apply_sorts(_work_schema(), data)
+    assert perms == {'work_experiences': [1, 2, 0]}
+    # identity sort is a permutation too — hosts realign by it blindly
+    assert apply_sorts(_work_schema(),
+                       {'work_experiences': [job('2023.5', 'B')]}) == \
+        {'work_experiences': [0]}
+    assert apply_sorts(_work_schema(), {}) == {}
+
+
+def test_duplicate_repeat_nodes_keep_the_first_permutation():
+    # a template duplicate makes derive emit one repeat twice: the
+    # second walk sees the now-sorted array and must not overwrite the
+    # pre-sort permutation with an identity
+    from copy import deepcopy
+    schema = _work_schema()
+    schema.children.append(deepcopy(schema.children[0]))
+    data = {'work_experiences': [job('2019.4'), job('2023.5')]}
+    assert apply_sorts(schema, data) == {'work_experiences': [1, 0]}
+
+
 def test_date_sort_asc_oldest_first():
     data = {'work_experiences': [job('2023-05'), job('2019.4')]}
     apply_sorts(_work_schema('h @sort=start_date'), data)
@@ -158,6 +181,16 @@ def test_nested_repeat_sorts_each_parent_item():
         ['2022-01', '2021-01']
 
 
+def test_nested_repeat_sorts_but_reports_no_perms():
+    schema = _work_schema('h', nested=True)  # only the sub repeat sorts
+    data = {'work_experiences': [
+        {'company': 'c1', 'start_date': '2020-01',
+         'sub': [{'sub_date': '2019-04'}, {'sub_date': '2021-04'}]}]}
+    assert apply_sorts(schema, data) == {}
+    assert [s['sub_date'] for s in data['work_experiences'][0]['sub']] == \
+        ['2021-04', '2019-04']
+
+
 def test_section_nested_key_addresses_through_sections():
     section = make_sdt('info', None, pr_extra=docpartlist_pr(), content=
                        para(make_sdt('start_date', None,
@@ -204,3 +237,4 @@ def test_render_applies_sort_directives():
     # the sort is in place: the caller's dict and the document agree
     assert [j['company'] for j in data['work_experiences']] == \
         ['newer', 'older']
+    assert result.sort == {'work_experiences': [1, 0]}

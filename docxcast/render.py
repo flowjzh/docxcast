@@ -56,6 +56,7 @@ class RenderError(Exception):
 class RenderResult:
     document: bytes
     report: ValidationResult
+    sort: dict  # per-path sort permutations (position → original index)
 
     def save(self, path) -> None:
         Path(path).write_bytes(self.document)
@@ -69,18 +70,20 @@ def render(template, data, *, strict: bool = False, keep_controls: bool = False)
     The template is re-parsed on every call, data is validated against it,
     and the repeat-level @sort directives are applied — the rule-carrying
     arrays of ``data`` are reordered in place, so the caller's dict and
-    the rendered document agree on order.
+    the rendered document agree on order. The sort permutations ride the
+    result (``.sort``): hosts re-align per-item records written in
+    extraction order (budget arrangements) by them.
     """
     doc = Document(template)
     schema = _derive(doc)
     report = schema.validate(data)
     if strict and report.errors:
         raise RenderError(report.errors[0])
-    apply_sorts(schema, data)
+    sort = apply_sorts(schema, data)
     _fill_children(doc.element.body, _as_dict(data), keep_controls)
     buf = BytesIO()
     doc.save(buf)
-    return RenderResult(document=buf.getvalue(), report=report)
+    return RenderResult(document=buf.getvalue(), report=report, sort=sort)
 
 
 def _fill_children(container, data: dict, keep_controls: bool) -> None:
