@@ -116,12 +116,33 @@ class Field:
 
 
 @dataclass
+class SortSpec:
+    """One repeat-level sort directive: ``@sort=<key>[:asc|desc]`` in the
+    repeat control's tag."""
+
+    key: str
+    desc: bool
+    kind: str
+
+
+def sort_kind(fmt: Optional[str]) -> str:
+    """The sort kind a field's declared format names — the one
+    format→kind mapping, beside the FORMAT_* constants."""
+    if fmt == FORMAT_DATE_TIME:
+        return 'datetime'
+    if fmt in (FORMAT_DATE, FORMAT_DATE_MONTH, FORMAT_DATE_YEAR):
+        return 'date'
+    return 'alphanumeric'
+
+
+@dataclass
 class Repeat:
     name: str
     remark: Optional[str] = None
     fields: list = field(default_factory=list)
     required: bool = False
     item: Optional[Field] = None  # a '$'-addressed item: the array holds its values
+    sort: Optional[SortSpec] = None  # @sort directive from the control's tag
 
     def to_json_schema(self) -> dict:
         items = (self.item.to_json_schema() if self.item is not None

@@ -27,7 +27,7 @@ dialog:
 | Word property | XML | Role |
 |---|---|---|
 | **Title** | `<w:alias w:val="name"/>` | the field name — the only address |
-| **Tag** | `<w:tag w:val="the candidate's full name"/>` | free-text remark, handed to the LLM as the extraction requirement |
+| **Tag** | `<w:tag w:val="the candidate's full name"/>` | free-text remark, handed to the LLM as the extraction requirement; a repeat's Tag may also end in a `@sort` directive (see below) |
 | **Content control cannot be deleted** | `<w:lock w:val="sdtLocked"/>` | required field (`w:lockType` works too; `sdtContentLocked` alone does not) |
 
 A control without a Title is unaddressable (see [Unnamed controls](#unnamed-controls)).
@@ -201,6 +201,33 @@ Derives `Repeat(fields=…)` → `{"type": "array", "items": {…}}`. The item
 deep copy with its own data; any template content in the repeat outside the
 item is discarded. `null`/`[]` → zero items, the whole control disappears.
 A repeat without a Title is unaddressable — skipped and omitted.
+
+### Sort directive
+
+A repeat's Tag may end in `@sort=<key>[:asc|desc]` — a deterministic output
+order over the array, by one field of its item. The directive is **code's
+job, never the model's**: it is stripped off the Tag at derive (the schema
+description and the LLM never see it) and applied to the data at render.
+
+```xml
+<w:sdtPr>
+  <w:alias w:val="work_experiences"/>
+  <w:tag w:val="jobs held, one item per job @sort=start_date:desc"/>
+  <w15:repeatingSection/>
+</w:sdtPr>
+```
+
+- `<key>` addresses a field of the repeat item; it may walk sections
+  (`@sort=info.start_date`), never another repeat (a nested repeat's array
+  carries its own directive on its own Tag)
+- the order defaults to `asc`
+- the sort kind comes from the addressed field's own declaration: a date
+  picker sorts as `date` (`2025`, `2025-01`, `2025.1` all parse), a
+  `dateTime` picker as `datetime`, anything else as `alphanumeric` natural
+  order (`Level 2` < `Level 10`, case-insensitive)
+- the sort is stable — equal keys keep their extracted order — and values
+  that do not parse (missing, empty, malformed) land at the **tail in both
+  directions**
 
 ### Scalar repeat → string array
 
@@ -441,11 +468,17 @@ The guards exist only in repeat-item scope; they are not schema nodes.
 | `$` sharing a repeating item with another addressed control | `$` addresses the item itself — no other address may share it |
 | two addressed members in one group | a group is one field, address it once |
 | two control members in one group | one control, the rest literal text |
+| repeat Tag with a malformed `@sort` directive | unparseable @sort directive |
+| `@sort` key not a field of the repeat item | @sort key … is not a field of the repeat item |
+| `@sort` key walking through another repeat | @sort key … walks through a repeat |
+| `@sort` key ending at a section, not a field | @sort key … must address a field |
 
 ## Render invariants
 
 - Controls are **unwrapped** by default (`keep_controls=True` keeps the
   structure for round-trip editing; conditional drops keep the group too).
+- `@sort` directives are applied on every render — the rule-carrying
+  arrays of the caller's data are reordered **in place**.
 - Any drop path tops an emptied table cell back up with one empty `w:p` —
   a `w:tc` must retain a paragraph.
 - Missing leaf values keep their template text (lenient); `strict=True`

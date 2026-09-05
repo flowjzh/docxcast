@@ -41,6 +41,7 @@ from docxcast._ooxml import (
 )
 from docxcast.derive import _derive
 from docxcast.schema import Issue, ValidationResult
+from docxcast.sorting import apply_sorts
 
 
 class RenderError(Exception):
@@ -65,12 +66,17 @@ def render(template, data, *, strict: bool = False, keep_controls: bool = False)
 
     Controls are unwrapped by default so the output is a clean document; pass
     keep_controls=True to keep the control structure for round-trip editing.
-    The template is re-parsed on every call and data is validated against it.
+    The template is re-parsed on every call, data is validated against it,
+    and the repeat-level @sort directives are applied — the rule-carrying
+    arrays of ``data`` are reordered in place, so the caller's dict and
+    the rendered document agree on order.
     """
     doc = Document(template)
-    report = _derive(doc).validate(data)
+    schema = _derive(doc)
+    report = schema.validate(data)
     if strict and report.errors:
         raise RenderError(report.errors[0])
+    apply_sorts(schema, data)
     _fill_children(doc.element.body, _as_dict(data), keep_controls)
     buf = BytesIO()
     doc.save(buf)

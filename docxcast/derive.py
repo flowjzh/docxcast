@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from docx import Document
 
 from docxcast._ooxml import (
@@ -38,6 +40,8 @@ from docxcast.schema import (
     Repeat,
     Schema,
     Section,
+    SortSpec,
+    sort_kind,
 )
 
 
@@ -106,6 +110,7 @@ def _parse_repeat(content, name, remark, required) -> Repeat:
     fields = []
     if (item := repeating_item(content)) is not None:
         _parse_children(item.find(qn('w:sdtContent')), fields, repeat=True)
+    remark, sort = _split_sort(name, remark, fields)
     if selfs := [f for f in fields if f.name == SELF]:
         if len(fields) > 1:
             raise DeriveError(
@@ -113,7 +118,48 @@ def _parse_repeat(content, name, remark, required) -> Repeat:
                 'addressed control may share the item')
         selfs[0].required = True  # every entry is a value; there is no way to omit it
         return Repeat(name=name, remark=remark, item=selfs[0], required=required)
-    return Repeat(name=name, remark=remark, fields=fields, required=required)
+    return Repeat(name=name, remark=remark, fields=fields, required=required,
+                  sort=sort)
+
+
+_SORT_RE = re.compile(r'\s*@sort=([\w.]+)(?::(asc|desc))?\s*$')
+
+
+def _split_sort(name: str, remark, fields: list) -> tuple[str | None, SortSpec | None]:
+    """The repeat tag's trailing ``@sort=<key>[:asc|desc]`` directive,
+    split off the remark — the schema description never carries it,
+    ordering is code's job, not the model's. An unknown key or a
+    mangled directive fails at derive time."""
+    if remark is None:
+        return None, None
+    m = _SORT_RE.search(remark)
+    if m is None:
+        if '@sort' in remark:
+            raise DeriveError(f'{name!r}: unparseable @sort directive')
+        return remark, None
+    key = m.group(1)
+    field = _sort_field(name, fields, key)
+    return (remark[:m.start()].rstrip(),
+            SortSpec(key=key, desc=m.group(2) == 'desc',
+                     kind=sort_kind(field.format)))
+
+
+def _sort_field(name: str, fields: list, key: str) -> Field:
+    """The field a sort key addresses. The key may walk sections; a
+    repeat ends the walk — its item's fields are another repeat's own
+    scope."""
+    nodes = fields
+    node = None
+    for part in key.split('.'):
+        node = next((f for f in nodes if f.name == part), None)
+        if node is None:
+            raise DeriveError(f'{name!r}: @sort key {key!r} is not a field of the repeat item')
+        if isinstance(node, Repeat):
+            raise DeriveError(f'{name!r}: @sort key {key!r} walks through a repeat')
+        nodes = node.children if isinstance(node, Section) else []
+    if not isinstance(node, Field):
+        raise DeriveError(f'{name!r}: @sort key {key!r} must address a field')
+    return node
 
 
 def _parse_section(content, name, remark, required) -> Section:
