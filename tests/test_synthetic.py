@@ -27,6 +27,7 @@ from tests.helpers import (
     repeating_item_pr,
     repeating_pr,
     run,
+    save_bytes,
 )
 
 
@@ -518,6 +519,19 @@ def test_schema_to_dict_roundtrip():
     d = derive_schema(BytesIO(template)).to_dict()
     assert d['children'][0]['name'] == 'a'
     assert Schema(**d)  # dict is constructor-compatible
+
+
+@pytest.mark.parametrize('comments, expected', [
+    (None, None),  # untouched: the default template's sentinel
+    ('', None),
+    ('Chinese resumes only', 'Chinese resumes only'),
+])
+def test_comments_core_property_becomes_schema_description(comments, expected):
+    doc = Document()
+    if comments is not None:
+        doc.core_properties.comments = comments
+    assert derive_schema(BytesIO(save_bytes(doc))).to_json_schema() \
+        .get('description') == expected
 
 
 def test_checkbox_renders_fallback_glyphs_without_states():

@@ -170,12 +170,18 @@ Node = Union[Field, Repeat, Section]
 @dataclass
 class Schema:
     children: list = field(default_factory=list)
+    # the template's Comments core property; guidance for the extraction
+    # model, never a constraint
+    description: Optional[str] = None
 
     def to_json_schema(self) -> dict:
-        return _object_schema(self.children)
+        return _object_schema(self.children, self.description)
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        d = asdict(self)
+        if d['description'] is None:  # omit-when-absent, like the emission path
+            del d['description']
+        return d
 
     def validate(self, data: object) -> ValidationResult:
         issues: list = []
@@ -215,7 +221,7 @@ def _nullable(schema: dict) -> dict:
     return schema
 
 
-def _object_schema(children: list, remark: Optional[str] = None) -> dict:
+def _object_schema(children: list, description: Optional[str] = None) -> dict:
     node = {'type': 'object'}
     if children:
         node['properties'] = {
@@ -224,8 +230,8 @@ def _object_schema(children: list, remark: Optional[str] = None) -> dict:
     required = [c.name for c in children if c.required]
     if required:
         node['required'] = required
-    if remark is not None:
-        node['description'] = remark
+    if description is not None:
+        node['description'] = description
     return node
 
 
