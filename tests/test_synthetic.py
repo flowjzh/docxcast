@@ -557,3 +557,82 @@ def test_render_preserves_exact_run_formatting():
     assert len(runs) == 1
     assert runs[0].find(qn('w:rPr')).find(qn('w:b')) is not None
     assert runs[0].find(qn('w:t')).text == 'New'
+
+
+# --- @override: variant layouts where data picks the rendering ---
+
+def _variant_item(whole_tag='single position @override=sub_experiences'):
+    # both variants ride in anonymous groups, the drop units — the
+    # whole layout as gen_templates.wrap_section builds it
+    whole = make_sdt('whole_experience?', whole_tag, pr_extra=docpartlist_pr(),
+                     content=para(make_sdt('title', 'position title', content=run(''))))
+    whole = make_sdt(pr_extra=group_pr(), content=[para(run('Whole: ')), whole])
+    sub_repeat = make_sdt(
+        'sub_experiences?', 'dated sub-positions', pr_extra=repeating_pr(),
+        content=make_sdt(pr_extra=repeating_item_pr(),
+                         content=para(make_sdt('title', 'position title', content=run('')))))
+    sub = make_sdt(pr_extra=group_pr(), content=[para(run('')), sub_repeat])
+    item = make_sdt(pr_extra=repeating_item_pr(), content=[whole, sub])
+    return build_doc(make_sdt('work', 'jobs', pr_extra=repeating_pr(), content=item))
+
+
+def _variant_data(whole=None, subs=None):
+    entry = {}
+    if whole is not None:
+        entry['whole_experience'] = {'title': whole}
+    if subs is not None:
+        entry['sub_experiences'] = [{'title': t} for t in subs]
+    return {'work': [entry]}
+
+
+def test_override_directive_is_stripped_from_the_schema():
+    schema = derive_schema(BytesIO(_variant_item()))
+    [work] = schema.children
+    whole, sub = work.fields
+    assert whole.remark == 'single position' and whole.overrides == 'sub_experiences'
+    assert sub.overrides is None
+    assert '@override' not in str(schema.to_json_schema())
+
+
+def test_override_drops_the_named_sibling_when_truthy():
+    template = _variant_item()
+    out = reopen(render(BytesIO(template), _variant_data(whole='Senior X', subs=['a', 'b'])))
+    assert 'Senior X' in full_text(out)
+    assert 'a' not in full_text(out) and 'Whole: ' in full_text(out)
+    assert paragraph_texts(out) == ['Whole: ', 'Senior X']  # the blank rides the group out
+
+
+def test_override_keeps_the_sibling_when_the_winner_is_falsy():
+    template = _variant_item()
+    out = reopen(render(BytesIO(template), _variant_data(subs=['a', 'b'])))
+    # the sub group's own leading blank renders with it
+    assert paragraph_texts(out) == ['', 'a', 'b']
+
+
+def test_override_without_a_target_value_changes_nothing():
+    # sub_experiences falsy: its own ? gate already dropped it
+    template = _variant_item()
+    out = reopen(render(BytesIO(template), _variant_data(whole='Senior X')))
+    assert paragraph_texts(out) == ['Whole: ', 'Senior X']
+
+
+def test_unparseable_override_directive_fails_derive():
+    with pytest.raises(DeriveError, match='unparseable @override'):
+        derive_schema(BytesIO(_variant_item(whole_tag='single position @override=')))
+
+
+def test_override_target_not_a_sibling_fails_derive():
+    with pytest.raises(DeriveError, match='not a sibling'):
+        derive_schema(BytesIO(_variant_item(whole_tag='single @override=nosuch')))
+
+
+def test_override_removes_the_sibling_under_keep_controls():
+    result = render(BytesIO(_variant_item()),
+                    _variant_data(whole='Senior X', subs=['a']), keep_controls=True)
+    assert 'a' not in full_text(reopen(result))
+
+
+def test_override_naming_itself_fails_derive():
+    with pytest.raises(DeriveError, match='names the node itself'):
+        derive_schema(BytesIO(_variant_item(
+            whole_tag='single @override=whole_experience')))

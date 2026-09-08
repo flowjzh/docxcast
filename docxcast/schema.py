@@ -81,6 +81,7 @@ class Field:
     alternatives: Optional[list] = None  # literal values a group shows instead of the format
     enum_labels: Optional[list] = None  # display labels parallel to enum
     required: bool = False
+    overrides: Optional[str] = None  # @override directive from the control's tag
 
     def to_json_schema(self) -> dict:
         node = self._value_branch()
@@ -143,6 +144,7 @@ class Repeat:
     required: bool = False
     item: Optional[Field] = None  # a '$'-addressed item: the array holds its values
     sort: Optional[SortSpec] = None  # @sort directive from the control's tag
+    overrides: Optional[str] = None  # @override directive from the control's tag
 
     def to_json_schema(self) -> dict:
         items = (self.item.to_json_schema() if self.item is not None
@@ -159,6 +161,7 @@ class Section:
     remark: Optional[str] = None
     children: list = field(default_factory=list)
     required: bool = False
+    overrides: Optional[str] = None  # @override directive from the control's tag
 
     def to_json_schema(self) -> dict:
         return _object_schema(self.children, self.remark)

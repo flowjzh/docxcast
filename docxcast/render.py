@@ -21,13 +21,12 @@ from docxcast._ooxml import (
     KIND_GROUP,
     KIND_ITEM,
     KIND_PICTURE,
-    group_members,
     KIND_REPEAT,
     KIND_SECTION,
     SELF,
     XML_SPACE,
-    dropdown_items,
     date_mask_runs,
+    dropdown_items,
     group_address,
     group_chunks,
     group_literals,
@@ -35,11 +34,11 @@ from docxcast._ooxml import (
     kind_of,
     qn,
     repeating_item,
+    sdt_alias,
     scope_guards,
-    split_conditional,
     text_attr,
 )
-from docxcast.derive import _derive
+from docxcast.derive import _derive, _split_override
 from docxcast.schema import Issue, ValidationResult
 from docxcast.sorting import apply_sorts
 
@@ -87,11 +86,57 @@ def render(template, data, *, strict: bool = False, keep_controls: bool = False)
 
 
 def _fill_children(container, data: dict, keep_controls: bool) -> None:
+    _drop_overridden(container, data)
     for child in list(container):
         if child.tag == qn('w:sdt'):
             _handle_sdt(child, data, keep_controls)
         elif child.tag in CONTAINER_TAGS:
             _fill_children(child, data, keep_controls)
+
+
+def _drop_overridden(container, data: dict) -> None:
+    """The @override directives of this scope, applied before the walk:
+    a node whose value is truthy removes the sibling its directive
+    names — the outermost block holding the addressed control goes with
+    it (SYNTAX.md, override directive). Both sides are usually
+    ``?``-conditional already, so this only fires when both hold data,
+    and the removal lands whether the winner stands before or after the
+    loser. The declaring scan stays in this scope: it descends through
+    anonymous groups but not into a repeat or section, whose items fill
+    from another dict."""
+    by_alias = {}
+    for sdt in _scope_sdts(container):
+        if alias := sdt_alias(sdt):
+            by_alias.setdefault(alias, []).append(sdt)
+    for alias, declarers in by_alias.items():
+        if not data.get(alias):
+            continue
+        for sdt in declarers:
+            pr = sdt.find(qn('w:sdtPr'))
+            _, target = _split_override(alias, text_attr(pr, 'w:tag'))
+            for loser in by_alias.get(target, ()):
+                block = loser
+                while block is not None and block.getparent() is not container:
+                    block = block.getparent()
+                if block is not None and block is not sdt:
+                    container.remove(block)
+
+
+def _scope_sdts(container):
+    """Every sdt of this scope, outermost first — groups are transparent,
+    a repeat or section is a candidate itself but its content is another
+    scope (its items fill from their own dicts)."""
+    for child in container:
+        if child.tag != qn('w:sdt'):
+            if child.tag in CONTAINER_TAGS:
+                yield from _scope_sdts(child)
+            continue
+        yield child
+        pr = child.find(qn('w:sdtPr'))
+        if pr is not None and kind_of(pr) not in (KIND_REPEAT, KIND_SECTION):
+            content = child.find(qn('w:sdtContent'))
+            if content is not None:
+                yield from _scope_sdts(content)
 
 
 def _handle_sdt(sdt, data: dict, keep_controls: bool) -> None:
@@ -101,7 +146,7 @@ def _handle_sdt(sdt, data: dict, keep_controls: bool) -> None:
         return
     # derive rejects '?' outside conditional groups, so by fill time a
     # marked address is always a conditional group's member
-    alias, _ = split_conditional(text_attr(pr, 'w:alias'))
+    alias = sdt_alias(sdt)
     kind = kind_of(pr)
     value = data.get(alias) if alias else None
 

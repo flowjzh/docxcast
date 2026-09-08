@@ -122,6 +122,13 @@ def split_conditional(alias: Optional[str]) -> tuple[Optional[str], bool]:
     return alias, False
 
 
+def sdt_alias(sdt) -> Optional[str]:
+    """The control's unmarked address — the alias with any conditional
+    marker stripped, None when the sdt carries no sdtPr or alias."""
+    pr = sdt.find(qn('w:sdtPr'))
+    return split_conditional(text_attr(pr, 'w:alias'))[0] if pr is not None else None
+
+
 def scope_guards(i: int, n: int) -> dict:
     """Positional guard values for item ``i`` of ``n`` in a repeat."""
     return {'has_prev': i > 0, 'has_next': i < n - 1}

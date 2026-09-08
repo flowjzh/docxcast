@@ -53,7 +53,7 @@ dialog:
 | Word property | XML | Role |
 |---|---|---|
 | **Title** | `<w:alias w:val="name"/>` | the field name — the only address |
-| **Tag** | `<w:tag w:val="the candidate's full name"/>` | free-text remark, handed to the LLM as the extraction requirement; a repeat's Tag may also end in a `@sort` directive (see below) |
+| **Tag** | `<w:tag w:val="the candidate's full name"/>` | free-text remark, handed to the LLM as the extraction requirement; a Tag may also end in a directive (a repeat's `@sort`, any block's `@override` — see below) |
 | **Content control cannot be deleted** | `<w:lock w:val="sdtLocked"/>` | required field (`w:lockType` works too; `sdtContentLocked` alone does not) |
 
 A control without a Title is unaddressable (see [Unnamed controls](#unnamed-controls)).
@@ -254,6 +254,41 @@ description and the LLM never see it) and applied to the data at render.
 - the sort is stable — equal keys keep their extracted order — and values
   that do not parse (missing, empty, malformed) land at the **tail in both
   directions**
+
+### Override directive
+
+Any addressed block's Tag may end in `@override=<sibling>` — when this
+node's value is truthy at render, the named **sibling in the same
+scope** does not render. The declaration sits on the winner; the loser
+is the addressed sibling, and the outermost block holding it (an
+unaddressed group wrapper, its private decoration included) drops as a
+unit. Like `@sort`, the directive is stripped off the Tag at derive —
+the schema description and the LLM never see it; rendering one of
+several variant layouts is code's job, not the model's.
+
+```xml
+<w:sdtPr>
+  <w:alias w:val="whole_experience?"/>
+  <w:tag w:val="fill for a single position… @override=sub_experiences"/>
+  <w:docPartList/>
+</w:sdtPr>
+```
+
+The workhorse case is a repeat item holding two variant layouts for one
+field — a single-position section and a dated sub-positions repeat.
+Both are `?`-conditional already, so each drops on its own falsy value;
+the override covers the fourth combination, both truthy, where the
+extraction filled both shapes and the document would show the same
+employer twice. The directive takes one name — a sibling of the same
+scope, never the declaring node itself; anything else fails
+`derive_schema`.
+
+- `@override=<sibling>` on a truthy node removes the sibling's block
+  before the walk — order in the document does not matter
+- the sibling lookup addresses the node itself, walking through
+  unaddressed groups; a `?` marker on the address is tolerated
+- with `keep_controls=True` the drop still applies: the loser's
+  structure is removed, not kept
 
 ### Scalar repeat → string array
 
@@ -495,6 +530,9 @@ The guards exist only in repeat-item scope; they are not schema nodes.
 | two addressed members in one group | a group is one field, address it once |
 | two control members in one group | one control, the rest literal text |
 | repeat Tag with a malformed `@sort` directive | unparseable @sort directive |
+| any Tag with a malformed `@override` directive | unparseable @override directive |
+| `@override` naming the node itself | @override names the node itself |
+| `@override` target not a sibling in the same scope | @override target … is not a sibling in the same scope |
 | `@sort` key not a field of the repeat item | @sort key … is not a field of the repeat item |
 | `@sort` key walking through another repeat | @sort key … walks through a repeat |
 | `@sort` key ending at a section, not a field | @sort key … must address a field |
@@ -505,6 +543,8 @@ The guards exist only in repeat-item scope; they are not schema nodes.
   structure for round-trip editing; conditional drops keep the group too).
 - `@sort` directives are applied on every render — the rule-carrying
   arrays of the caller's data are reordered **in place**.
+- `@override` drops the losing variant block per scope before the fill
+  walk — truthy value on the declaring node, sibling gone.
 - Any drop path tops an emptied table cell back up with one empty `w:p` —
   a `w:tc` must retain a paragraph.
 - Missing leaf values keep their template text (lenient); `strict=True`
