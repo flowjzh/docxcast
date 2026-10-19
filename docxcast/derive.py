@@ -126,6 +126,7 @@ def _parse_repeat(content, name, remark, required, overrides) -> Repeat:
     if (item := repeating_item(content)) is not None:
         _parse_children(item.find(qn('w:sdtContent')), fields, repeat=True)
     remark, sort = _split_sort(name, remark, fields)
+    remark, verbatim = _split_verbatim(name, remark)
     _check_override_targets(fields)
     if selfs := [f for f in fields if f.name == SELF]:
         if len(fields) > 1:
@@ -134,14 +135,17 @@ def _parse_repeat(content, name, remark, required, overrides) -> Repeat:
                 'addressed control may share the item')
         selfs[0].required = True  # every entry is a value; there is no way to omit it
         return Repeat(name=name, remark=remark, item=selfs[0], required=required,
-                      overrides=overrides)
+                      verbatim=verbatim, overrides=overrides)
     return Repeat(name=name, remark=remark, fields=fields, required=required,
-                  sort=sort, overrides=overrides)
+                  sort=sort, verbatim=verbatim, overrides=overrides)
 
 
 _SORT_RE = re.compile(r'\s*@sort=([\w.]+)(?::(asc|desc))?\s*$')
 
 _OVERRIDE_RE = re.compile(r'\s*@override=([\w.]+)\s*$')
+
+_VERBATIM_RE = re.compile(r'\s*@verbatim(?:=(\d+(?:\.\d+)?))?\s*$')
+VERBATIM_DEFAULT = 0.9  # a bare @verbatim: the tolerance the schema carries
 
 
 def _split_directive(name: str, remark: str | None, pattern: re.Pattern,
@@ -199,6 +203,22 @@ def _split_sort(name: str, remark, fields: list) -> tuple[str | None, SortSpec |
                      kind=sort_kind(field.format)))
 
 
+def _split_verbatim(name: str, remark) -> tuple[str | None, float | None]:
+    """The tag's trailing ``@verbatim[=ratio]`` — the field's string
+    items are verbatim copies of the document. A bare marker takes the
+    default; ``=85`` reads as percent; anything mangled or out of range
+    fails at derive time."""
+    remark, groups = _split_directive(name, remark, _VERBATIM_RE, 'verbatim')
+    if groups is None:
+        return remark, None
+    ratio = float(groups[0]) if groups[0] else VERBATIM_DEFAULT
+    if ratio > 1:
+        ratio /= 100
+    if not 0 < ratio <= 1:
+        raise DeriveError(f'{name!r}: @verbatim ratio {groups[0]!r} is out of range')
+    return remark, ratio
+
+
 def _sort_field(name: str, fields: list, key: str) -> Field:
     """The field a sort key addresses. The key may walk sections; a
     repeat ends the walk — its item's fields are another repeat's own
@@ -241,8 +261,9 @@ def _parse_field(pr, name: str, remark, required: bool, kind: str,
         )
     elif kind == KIND_CHECKBOX:
         kwargs['type'] = TYPE_BOOLEAN
+    remark, verbatim = _split_verbatim(name, remark)
     return Field(name=name, remark=remark, required=required, overrides=overrides,
-                 **kwargs)
+                 verbatim=verbatim, **kwargs)
 
 
 def _parse_group(pr, content, repeat: bool = False):
@@ -284,10 +305,13 @@ def _parse_group(pr, content, repeat: bool = False):
     remark, overrides = _split_override(name, remark)
     if conditional:
         if not members:  # the group itself is the guard of static content
+            remark, verbatim = _split_verbatim(name, remark)
             return Field(name=name, remark=remark, required=required,
-                         overrides=overrides)
+                         overrides=overrides, verbatim=verbatim)
         msdt, mpr, _, _ = members[0]
         mcontent = msdt.find(qn('w:sdtContent'))
+        # the member's own parsers split the verbatim directive off its
+        # tag — the remark above IS that tag (group_address sourced it)
         if (mkind := kind_of(mpr)) == KIND_REPEAT:
             return _parse_repeat(mcontent, name, remark, required, overrides)
         if mkind == KIND_SECTION:
@@ -297,8 +321,9 @@ def _parse_group(pr, content, repeat: bool = False):
         field = _parse_field(members[0][1], name, remark, required,
                              kind_of(members[0][1]), overrides)
     else:
+        remark, verbatim = _split_verbatim(name, remark)
         field = Field(name=name, remark=remark, required=required,
-                      overrides=overrides)
+                      overrides=overrides, verbatim=verbatim)
     if literals := group_literals(content):
         field.alternatives = literals
     return field

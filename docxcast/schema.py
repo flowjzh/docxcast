@@ -82,6 +82,7 @@ class Field:
     enum_labels: Optional[list] = None  # display labels parallel to enum
     required: bool = False
     overrides: Optional[str] = None  # @override directive from the control's tag
+    verbatim: Optional[float] = None  # @verbatim directive from the control's tag
 
     def to_json_schema(self) -> dict:
         node = self._value_branch()
@@ -95,6 +96,10 @@ class Field:
             node = {'anyOf': [node, {'enum': ['']}]}
         if (desc := self._description()) is not None:
             node['description'] = desc
+        if self.verbatim is not None:
+            # the extraction contract rides an extension keyword, not the
+            # description — consumers read it structurally (x-verbatim)
+            node['x-verbatim'] = self.verbatim
         return node
 
     def _value_branch(self) -> dict:
@@ -145,6 +150,7 @@ class Repeat:
     item: Optional[Field] = None  # a '$'-addressed item: the array holds its values
     sort: Optional[SortSpec] = None  # @sort directive from the control's tag
     overrides: Optional[str] = None  # @override directive from the control's tag
+    verbatim: Optional[float] = None  # @verbatim directive from the control's tag
 
     def to_json_schema(self) -> dict:
         items = (self.item.to_json_schema() if self.item is not None
@@ -152,6 +158,8 @@ class Repeat:
         node = {'type': 'array', 'items': items}
         if self.remark is not None:
             node['description'] = self.remark
+        if self.verbatim is not None:
+            node['x-verbatim'] = self.verbatim
         return node
 
 

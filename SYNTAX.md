@@ -290,6 +290,20 @@ scope, never the declaring node itself; anything else fails
 - with `keep_controls=True` the drop still applies: the loser's
   structure is removed, not kept
 
+### Verbatim directive
+
+Any addressed **field or repeat** Tag may end in `@verbatim` (optionally
+`@verbatim=<ratio>`) — the field's string items are declared verbatim
+copies of the document text:
+
+- a bare marker takes the default tolerance `0.9`; `=85` reads as
+  percent (85%); the value must land in (0, 1]
+- like `@sort` and `@override`, the directive is stripped off the Tag
+  at derive — the remark never carries it — and emitted as the JSON
+  Schema extension keyword `x-verbatim` (the ratio as a float). The
+  extraction pipeline reads the keyword structurally; a mangled or
+  out-of-range directive fails `derive_schema`
+
 ### Scalar repeat → string array
 
 An item whose **sole addressed control** is titled `$` fills from the entry
