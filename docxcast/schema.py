@@ -71,6 +71,14 @@ class Issue:
         return {k: v for k, v in asdict(self).items() if v is not MISSING}
 
 
+def _emit_verbatim(node: dict, ratio: Optional[float]) -> dict:
+    """Attach the @verbatim directive as the schema's extension keyword —
+    the extraction contract rides the keyword, not the description."""
+    if ratio is not None:
+        node['x-verbatim'] = ratio
+    return node
+
+
 @dataclass
 class Field:
     name: str
@@ -96,11 +104,7 @@ class Field:
             node = {'anyOf': [node, {'enum': ['']}]}
         if (desc := self._description()) is not None:
             node['description'] = desc
-        if self.verbatim is not None:
-            # the extraction contract rides an extension keyword, not the
-            # description — consumers read it structurally (x-verbatim)
-            node['x-verbatim'] = self.verbatim
-        return node
+        return _emit_verbatim(node, self.verbatim)
 
     def _value_branch(self) -> dict:
         """The field's value node — a union wraps it in anyOf."""
@@ -158,9 +162,7 @@ class Repeat:
         node = {'type': 'array', 'items': items}
         if self.remark is not None:
             node['description'] = self.remark
-        if self.verbatim is not None:
-            node['x-verbatim'] = self.verbatim
-        return node
+        return _emit_verbatim(node, self.verbatim)
 
 
 @dataclass

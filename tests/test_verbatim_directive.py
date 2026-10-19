@@ -1,7 +1,6 @@
 """The @verbatim directive: stripped off the Tag at derive like @sort
 and @override, carried as the schema's ``x-verbatim`` keyword — the
-structured channel the extraction pipeline reads instead of scanning
-descriptions."""
+structured channel the extraction pipeline reads."""
 
 from io import BytesIO
 
