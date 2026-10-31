@@ -585,12 +585,15 @@ def _variant_data(whole=None, subs=None):
     return {'work': [entry]}
 
 
-def test_override_directive_is_stripped_from_the_schema():
+def test_override_directive_rides_the_keyword_not_the_description():
     schema = derive_schema(BytesIO(_variant_item()))
     [work] = schema.children
     whole, sub = work.fields
     assert whole.remark == 'single position' and whole.overrides == 'sub_experiences'
     assert sub.overrides is None
+    nodes = schema.to_json_schema()['properties']['work']['items']['properties']
+    assert nodes['whole_experience']['x-override'] == 'sub_experiences'
+    assert 'x-override' not in nodes['sub_experiences']
     assert '@override' not in str(schema.to_json_schema())
 
 

@@ -262,8 +262,10 @@ node's value is truthy at render, the named **sibling in the same
 scope** does not render. The declaration sits on the winner; the loser
 is the addressed sibling, and the outermost block holding it (an
 unaddressed group wrapper, its private decoration included) drops as a
-unit. Like `@sort`, the directive is stripped off the Tag at derive —
-the schema description and the LLM never see it; rendering one of
+unit. Like `@sort` and `@verbatim`, the directive is stripped off the
+Tag at derive — the remark never carries it — and emitted as the JSON
+Schema extension keyword `x-override` (the sibling's name); the
+extraction pipeline reads the keyword structurally. Rendering one of
 several variant layouts is code's job, not the model's.
 
 ```xml

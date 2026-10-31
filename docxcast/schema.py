@@ -79,6 +79,15 @@ def _emit_verbatim(node: dict, ratio: Optional[float]) -> dict:
     return node
 
 
+def _emit_override(node: dict, target: Optional[str]) -> dict:
+    """Attach the @override directive as the schema's extension keyword —
+    the sibling this node yields to at render, which lets the extraction
+    pipeline drop the node once that sibling is extracted on its own."""
+    if target is not None:
+        node['x-override'] = target
+    return node
+
+
 @dataclass
 class Field:
     name: str
@@ -104,7 +113,7 @@ class Field:
             node = {'anyOf': [node, {'enum': ['']}]}
         if (desc := self._description()) is not None:
             node['description'] = desc
-        return _emit_verbatim(node, self.verbatim)
+        return _emit_override(_emit_verbatim(node, self.verbatim), self.overrides)
 
     def _value_branch(self) -> dict:
         """The field's value node — a union wraps it in anyOf."""
@@ -162,7 +171,7 @@ class Repeat:
         node = {'type': 'array', 'items': items}
         if self.remark is not None:
             node['description'] = self.remark
-        return _emit_verbatim(node, self.verbatim)
+        return _emit_override(_emit_verbatim(node, self.verbatim), self.overrides)
 
 
 @dataclass
@@ -174,7 +183,8 @@ class Section:
     overrides: Optional[str] = None  # @override directive from the control's tag
 
     def to_json_schema(self) -> dict:
-        return _object_schema(self.children, self.remark)
+        return _emit_override(_object_schema(self.children, self.remark),
+                              self.overrides)
 
 
 Node = Union[Field, Repeat, Section]
