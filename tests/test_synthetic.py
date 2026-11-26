@@ -207,6 +207,51 @@ def test_group_renders_either_branch():
     assert count_sdts(as_date) == count_sdts(as_literal) == 0
 
 
+def test_group_none_value_unwraps_cleanly():
+    # an unfilled group used to splice its member control raw into the
+    # walk's already-snapshotted children — the orphan control a lenient
+    # render shipped
+    out = reopen(render(BytesIO(build_doc(_end_date_group())), {}))
+    assert count_sdts(out) == 0
+    assert 'Present' in full_text(out)
+
+
+def test_repeat_phantom_item_leaves_no_control():
+    item = make_sdt(pr_extra=repeating_item_pr(), content=para(
+        _end_date_group(),
+        make_sdt('name', 'project title', content=run('Project Title.')),
+    ))
+    repeat = make_sdt('project_experiences?', 'projects',
+                      pr_extra=repeating_pr(), content=item)
+    template = build_doc(make_sdt(pr_extra=group_pr(),
+                                  content=[para(run('Projects')), repeat]))
+    data = {'project_experiences': [
+        {'end_date': '2025-12', 'name': 'AskHR'},
+        {'end_date': None, 'name': None},
+    ]}
+    out = reopen(render(BytesIO(template), data))
+    assert count_sdts(out) == 0
+    assert 'AskHR' in full_text(out)
+
+
+def test_control_nested_in_a_leaf_ships_neither_raw():
+    # the unwrap's splice lands after the walk's child snapshot — both
+    # the unfilled and the filled leaf must descend or the nested
+    # control escapes the render
+    outer = make_sdt('outer', 'outer leaf',
+                     content=[run('x'), make_sdt('inner', 'inner leaf', content=run('y'))])
+    template = build_doc(outer)
+    out = reopen(render(BytesIO(template), {}))
+    assert count_sdts(out) == 0 and full_text(out) == 'xy'
+    out = reopen(render(BytesIO(template), {'outer': 'filled'}))
+    assert count_sdts(out) == 0 and full_text(out) == 'filledy'
+
+
+def test_keep_controls_preserves_an_unfilled_group():
+    out = reopen(render(BytesIO(build_doc(_end_date_group())), {}, keep_controls=True))
+    assert count_sdts(out) == 2  # the group and its member survive round-trip
+
+
 def test_group_union_validates_literal_before_type_dispatch():
     # a checkbox member plus a literal: the emitted anyOf accepts the
     # literal, so the internal validator must too (not type_mismatch)

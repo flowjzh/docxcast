@@ -193,6 +193,16 @@ def _handle_sdt(sdt, data: dict, keep_controls: bool) -> None:
 
     if value is not None:
         _fill_leaf(content, kind, value, pr)
+    _visited(sdt, content, data, keep_controls)
+
+
+def _visited(sdt, content, data: dict, keep_controls: bool) -> None:
+    """The unwrap's splice lands after the walk's child snapshot —
+    descend first or any control nested in ``content`` ships raw. A
+    round-trip render keeps its structure, so the descent is a
+    clean-render concern only."""
+    if not keep_controls:
+        _fill_children(content, data, keep_controls)
     _unwrap(sdt, content, keep_controls)
 
 
@@ -225,8 +235,8 @@ def _fill_group(sdt, pr, content, data: dict, keep_controls: bool) -> None:
         mcontent = msdt.find(qn('w:sdtContent'))
         if mcontent is not None:
             _fill_leaf(mcontent, kind_of(mpr), value, mpr)
-            _unwrap(msdt, mcontent, keep_controls)
-    _unwrap(sdt, content, keep_controls)
+            _visited(msdt, mcontent, data, keep_controls)
+    _visited(sdt, content, data, keep_controls)
 
 
 def _drop_literal_runs(content, texts: set) -> None:
